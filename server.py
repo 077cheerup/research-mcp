@@ -4,6 +4,7 @@ from pathlib import Path
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 
 
@@ -29,7 +30,9 @@ def load_experiments() -> list[Experiment]:
     return [Experiment(**item) for item in raw_data]
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
 def search_experiments(query: str) -> list[Experiment]:
     """Find experiments by case-insensitive substring in run ID, algorithm, benchmark, or note."""
     query = query.strip().casefold()
