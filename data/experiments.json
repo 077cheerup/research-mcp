@@ -1,0 +1,26 @@
+[
+  {
+    "run_id": "exp001",
+    "algorithm": "Baseline",
+    "benchmark": "F1",
+    "dimension": 1000,
+    "final_fitness": 1250.5,
+    "note": "Baseline experiment"
+  },
+  {
+    "run_id": "exp002",
+    "algorithm": "Full-D",
+    "benchmark": "F1",
+    "dimension": 1000,
+    "final_fitness": 980.2,
+    "note": "Full-dimensional search"
+  },
+  {
+    "run_id": "exp003",
+    "algorithm": "RG",
+    "benchmark": "F2",
+    "dimension": 1000,
+    "final_fitness": 430.8,
+    "note": "Random grouping experiment"
+  }
+]
