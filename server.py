@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from mcp.server import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError, ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 
@@ -47,6 +47,29 @@ def search_experiments(query: str) -> list[Experiment]:
         if any(query in field.casefold() for field in fields):
             matches.append(experiment)
     return matches
+
+
+@mcp.resource("research://project/overview", mime_type="text/markdown")
+def get_project_overview() -> str:
+    """Overview of the research project and its experiment data."""
+    return (
+        "# Research Project\n\n"
+        "This project provides access to local optimization experiment records.\n\n"
+        "## Data\n"
+        "- Each record includes an algorithm, benchmark, dimension, final fitness, and note.\n\n"
+        "## MCP Capabilities\n"
+        "- Search records with `search_experiments`.\n"
+        "- Read a record at `research://experiments/{run_id}`.\n"
+    )
+
+
+@mcp.resource("research://experiments/{run_id}", mime_type="application/json")
+def get_experiment(run_id: str) -> Experiment:
+    """Read an experiment record by its run ID."""
+    for experiment in load_experiments():
+        if experiment.run_id == run_id:
+            return experiment
+    raise ResourceNotFoundError(f"Experiment {run_id!r} not found.")
 
 
 if __name__ == "__main__":
