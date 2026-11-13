@@ -2,7 +2,7 @@ from pathlib import Path
 
 import anyio
 from mcp import Client, MCPError, StdioServerParameters
-from mcp.types import TextResourceContents
+from mcp.types import TextContent, TextResourceContents
 
 
 async def main() -> None:
@@ -71,6 +71,38 @@ async def main() -> None:
         print(f"\n=== RESOURCES/READ {missing_uri} ===", flush=True)
         try:
             await client.read_resource(missing_uri)
+        except MCPError as error:
+            print("exception_class:", type(error).__name__)
+            print("code:", error.code)
+            print("message:", error.message)
+            print("data:", error.data)
+
+        print("\n=== PROMPTS/LIST ===", flush=True)
+        prompts = await client.list_prompts()
+        for prompt in prompts.prompts:
+            print("name:", prompt.name)
+            print("description:", prompt.description)
+            print("arguments:", prompt.arguments)
+
+        for arguments in (
+            {"run_id": "exp002", "focus": "convergence"},
+            {"run_id": "exp003"},
+        ):
+            print(f"\n=== PROMPTS/GET analyze_experiment {arguments} ===", flush=True)
+            prompt_result = await client.get_prompt("analyze_experiment", arguments=arguments)
+            print("result_class:", type(prompt_result).__name__)
+            print("description:", prompt_result.description)
+            print("messages:", prompt_result.messages)
+            for message in prompt_result.messages:
+                print("role:", message.role)
+                print("content_class:", type(message.content).__name__)
+                if isinstance(message.content, TextContent):
+                    print("text:")
+                    print(message.content.text)
+
+        print("\n=== PROMPTS/GET analyze_experiment (missing run_id) ===", flush=True)
+        try:
+            await client.get_prompt("analyze_experiment", arguments={"focus": "convergence"})
         except MCPError as error:
             print("exception_class:", type(error).__name__)
             print("code:", error.code)

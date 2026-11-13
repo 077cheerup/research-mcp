@@ -72,5 +72,19 @@ def get_experiment(run_id: str) -> Experiment:
     raise ResourceNotFoundError(f"Experiment {run_id!r} not found.")
 
 
+@mcp.prompt()
+def analyze_experiment(run_id: str, focus: str = "overall") -> str:
+    """Prepare an analysis request for a research experiment."""
+    logger.info("Rendering analyze_experiment for run_id=%r, focus=%r", run_id, focus)
+    return (
+        f"Analyze experiment: {run_id}\n\n"
+        f"Focus: {focus}\n\n"
+        "Please identify:\n"
+        "- notable performance characteristics\n"
+        "- possible weaknesses or risks\n"
+        "- useful follow-up checks"
+    )
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
