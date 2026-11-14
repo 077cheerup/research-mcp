@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 
 import anyio
+from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import ToolMessage
+from langchain_openai import ChatOpenAI
 
 
 QUESTION = "Find all F1 experiment records and tell me which one has the lowest final_fitness."
@@ -14,6 +15,7 @@ CONTROL_QUESTION = "What is 2 + 2?"
 
 async def main() -> None:
     server_path = Path(__file__).resolve().parent / "server.py"
+    load_dotenv(server_path.with_name(".env"))
     async with MCPAdapter(server_path) as adapter:
         tools = await adapter.list_tools()
         print("=== LANGCHAIN TOOLS FROM MCP ===")
@@ -27,9 +29,16 @@ async def main() -> None:
         agent_tools = [tool for tool in tools if tool.name == "search_experiments"]
         assert len(agent_tools) == 1, "Expected exactly one search_experiments tool."
 
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise SystemExit("Set OPENAI_API_KEY before running the agent questions.")
-        model = init_chat_model("openai:gpt-4.1-mini")
+        required_settings = ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL")
+        missing_settings = [name for name in required_settings if not os.environ.get(name)]
+        if missing_settings:
+            raise SystemExit(f"Set {', '.join(missing_settings)} before running the agent questions.")
+        model = ChatOpenAI(
+            model=os.environ["LLM_MODEL"],
+            base_url=os.environ["LLM_BASE_URL"],
+            api_key=os.environ["LLM_API_KEY"],
+            use_responses_api=False,
+        )
         agent = create_agent(model=model, tools=agent_tools)
 
         for question in (QUESTION, CONTROL_QUESTION):
