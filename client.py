@@ -4,9 +4,14 @@ import anyio
 from mcp import Client, MCPError, StdioServerParameters
 from mcp.client import ClientRequestContext
 from mcp.types import (
+    CallToolResult,
+    ElicitRequest,
     ElicitRequestFormParams,
     ElicitRequestParams,
     ElicitResult,
+    InputRequest,
+    InputRequiredResult,
+    InputResponse,
     TextContent,
     TextResourceContents,
 )
@@ -21,6 +26,71 @@ async def handle_elicitation(
     print("message:", params.message)
     print("requested_schema:", params.requested_schema, flush=True)
     return ElicitResult(action="accept", content={"focus": "convergence"})
+
+
+def fulfil_input_request(request: InputRequest) -> InputResponse:
+    print("=== MANUAL FULFIL ===")
+    print("request_class:", type(request).__name__)
+    print("request.method:", request.method)
+    print("request.params:", request.params)
+    if not isinstance(request, ElicitRequest):
+        raise NotImplementedError(f"Unsupported input request: {request.method}")
+    if not isinstance(request.params, ElicitRequestFormParams):
+        raise NotImplementedError("Only form elicitation is supported in this demo.")
+    print("message:", request.params.message)
+    print("requested_schema:", request.params.requested_schema)
+    return ElicitResult(action="accept", content={"focus": "convergence"})
+
+
+async def demonstrate_manual_mrtr(client: Client) -> None:
+    tool_name = "create_analysis_request"
+    arguments = {"run_id": "exp002"}
+    print("\n=== MANUAL MRTR ROUND 1 ===", flush=True)
+    result = await client.session.call_tool(tool_name, arguments, allow_input_required=True)
+    print("result_class:", type(result).__name__)
+    if not isinstance(result, InputRequiredResult):
+        print("actual_result:", result)
+        return
+
+    round_number = 1
+    while isinstance(result, InputRequiredResult):
+        if round_number >= 5:
+            raise RuntimeError("Manual MRTR did not finish within 5 rounds.")
+
+        requests = result.input_requests or {}
+        request_state = result.request_state
+        print("input_requests:", requests)
+        print("request_state is None:", request_state is None)
+        print("request_state type:", type(request_state).__name__)
+        if isinstance(request_state, str):
+            print("request_state length:", len(request_state))
+
+        responses = {}
+        for key, request in requests.items():
+            print("input_request key:", key)
+            responses[key] = fulfil_input_request(request)
+        print("input_responses keys:", list(responses))
+        for response in responses.values():
+            print("response_class:", type(response).__name__)
+            if isinstance(response, ElicitResult):
+                print("action:", response.action)
+                print("content:", response.content)
+
+        round_number += 1
+        print(f"\n=== MANUAL MRTR ROUND {round_number} ===", flush=True)
+        result = await client.session.call_tool(
+            tool_name,
+            arguments,
+            input_responses=responses,
+            request_state=request_state,
+            allow_input_required=True,
+        )
+        print("result_class:", type(result).__name__)
+
+    if isinstance(result, CallToolResult):
+        print("is_error:", result.is_error)
+        print("content:", result.content)
+        print("structured_content:", result.structured_content)
 
 
 async def main() -> None:
@@ -134,6 +204,8 @@ async def main() -> None:
         print("is_error:", result.is_error)
         print("content:", result.content)
         print("structured_content:", result.structured_content)
+
+        await demonstrate_manual_mrtr(client)
 
     print("\n=== WITHOUT ELICITATION CALLBACK ===", flush=True)
     async with Client(server_params) as client:
