@@ -1,16 +1,78 @@
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 import anyio
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 
 QUESTION = "Find all F1 experiment records and tell me which one has the lowest final_fitness."
 CONTROL_QUESTION = "What is 2 + 2?"
+
+
+def print_message_flow(messages: Sequence[BaseMessage]) -> None:
+    first_tool_request: tuple[int, AIMessage] | None = None
+    final_ai: tuple[int, AIMessage] | None = None
+
+    print("\n=== MESSAGE FLOW ===")
+    for index, message in enumerate(messages):
+        print(f"[{index}]")
+        print("message_class:", type(message).__name__)
+        if isinstance(message, HumanMessage):
+            print("content:", message.content)
+        elif isinstance(message, AIMessage):
+            final_ai = (index, message)
+            if message.tool_calls and first_tool_request is None:
+                first_tool_request = (index, message)
+            print("content:", message.content)
+            print("tool_calls_count:", len(message.tool_calls))
+            for call in message.tool_calls:
+                print("tool_call id:", call.get("id"))
+                print("tool_call name:", call.get("name"))
+                print("tool_call args:", call.get("args"))
+                print("tool_call type:", call.get("type"))
+        elif isinstance(message, ToolMessage):
+            print("name:", getattr(message, "name", None))
+            print("tool_call_id:", getattr(message, "tool_call_id", None))
+            print("status:", getattr(message, "status", None))
+            print("content:", message.content)
+
+    print("\n=== TOOL CALL PAIRING ===")
+    if first_tool_request is None:
+        print("No tool calls.")
+    else:
+        request_index, request_message = first_tool_request
+        responses_by_id = {
+            getattr(message, "tool_call_id", None): message
+            for message in messages[request_index + 1 :]
+            if isinstance(message, ToolMessage)
+        }
+        for call in request_message.tool_calls:
+            call_id = call.get("id")
+            response = responses_by_id.get(call_id) if call_id is not None else None
+            print("tool_call_id:", call_id)
+            print("requested_tool:", call.get("name"))
+            print("matched_tool_message:", response is not None)
+            response_name = getattr(response, "name", None)
+            if response_name is not None:
+                print("response_tool:", response_name)
+
+    print("\n=== AI MESSAGE ROLES IN LOOP ===")
+    if first_tool_request is None:
+        print("tool_request_ai_message_index:", None)
+    else:
+        request_index, request_message = first_tool_request
+        print("tool_request_ai_message_index:", request_index)
+        print("tool_calls_count:", len(request_message.tool_calls))
+    if final_ai is not None:
+        final_index, final_message = final_ai
+        print("final_ai_message_index:", final_index)
+        print("final_tool_calls_count:", len(final_message.tool_calls))
+        print("final_text:", final_message.text)
 
 
 async def main() -> None:
@@ -54,6 +116,7 @@ async def main() -> None:
             print("final_message_class:", type(final_message).__name__)
             print("=== FINAL ANSWER ===")
             print(final_message.text, flush=True)
+            print_message_flow(messages)
 
 
 if __name__ == "__main__":
