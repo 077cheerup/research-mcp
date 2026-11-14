@@ -2,4 +2,7 @@
 name = "research-mcp"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["mcp[cli]>=2.2,<3"]
+dependencies = [
+    "langchain[mcp,openai]>=1.4.0",
+    "mcp[cli]>=2.2,<3",
+]
