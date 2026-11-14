@@ -2,7 +2,25 @@ from pathlib import Path
 
 import anyio
 from mcp import Client, MCPError, StdioServerParameters
-from mcp.types import TextContent, TextResourceContents
+from mcp.client import ClientRequestContext
+from mcp.types import (
+    ElicitRequestFormParams,
+    ElicitRequestParams,
+    ElicitResult,
+    TextContent,
+    TextResourceContents,
+)
+
+
+async def handle_elicitation(
+    _context: ClientRequestContext,
+    params: ElicitRequestParams,
+) -> ElicitResult:
+    assert isinstance(params, ElicitRequestFormParams)
+    print("=== ELICITATION CALLBACK ===")
+    print("message:", params.message)
+    print("requested_schema:", params.requested_schema, flush=True)
+    return ElicitResult(action="accept", content={"focus": "convergence"})
 
 
 async def main() -> None:
@@ -12,7 +30,7 @@ async def main() -> None:
         cwd=Path(__file__).resolve().parent,
     )
 
-    async with Client(server_params) as client:  # 创建一个能够连接这个 MCP Server 的 Client。
+    async with Client(server_params, elicitation_callback=handle_elicitation) as client:
         print("=== TOOLS/LIST ===")
         tools = await client.list_tools()  # Client 向 Server 发起 Tool Discovery。
         for tool in tools.tools:
@@ -103,6 +121,24 @@ async def main() -> None:
         print("\n=== PROMPTS/GET analyze_experiment (missing run_id) ===", flush=True)
         try:
             await client.get_prompt("analyze_experiment", arguments={"focus": "convergence"})
+        except MCPError as error:
+            print("exception_class:", type(error).__name__)
+            print("code:", error.code)
+            print("message:", error.message)
+            print("data:", error.data)
+
+        print("\n=== ELICITATION / MRTR CASE ===", flush=True)
+        print("protocol_version:", client.protocol_version, flush=True)
+        result = await client.call_tool("create_analysis_request", {"run_id": "exp002"})
+        print("result_class:", type(result).__name__)
+        print("is_error:", result.is_error)
+        print("content:", result.content)
+        print("structured_content:", result.structured_content)
+
+    print("\n=== WITHOUT ELICITATION CALLBACK ===", flush=True)
+    async with Client(server_params) as client:
+        try:
+            await client.call_tool("create_analysis_request", {"run_id": "exp002"})
         except MCPError as error:
             print("exception_class:", type(error).__name__)
             print("code:", error.code)

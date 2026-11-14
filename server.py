@@ -1,8 +1,10 @@
 import json
 import logging
 from pathlib import Path
+from typing import Annotated
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Elicit, Resolve
 from mcp.server.mcpserver.exceptions import ResourceNotFoundError, ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
@@ -84,6 +86,28 @@ def analyze_experiment(run_id: str, focus: str = "overall") -> str:
         "- possible weaknesses or risks\n"
         "- useful follow-up checks"
     )
+
+
+class AnalysisFocus(BaseModel):
+    focus: str
+
+
+async def ask_analysis_focus(run_id: str) -> Elicit[AnalysisFocus]:
+    logger.info("Resolver asks for analysis focus for %r", run_id)
+    return Elicit(
+        f"What aspect should be analyzed for experiment {run_id}?",
+        AnalysisFocus,
+    )
+
+
+@mcp.tool()
+async def create_analysis_request(
+    run_id: str,
+    focus: Annotated[AnalysisFocus, Resolve(ask_analysis_focus)],
+) -> str:
+    """Create an analysis request with a focus supplied by the user."""
+    logger.info("Tool body executes with run_id=%r focus=%r", run_id, focus.focus)
+    return f"Analysis request created for {run_id} with focus {focus.focus!r}."
 
 
 if __name__ == "__main__":
