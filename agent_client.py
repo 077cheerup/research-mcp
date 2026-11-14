@@ -1,4 +1,5 @@
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -10,12 +11,20 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langchain_openai import ChatOpenAI
 
 
-QUESTION = "Find all F1 experiment records and tell me which one has the lowest final_fitness."
-CONTROL_QUESTION = "What is 2 + 2?"
+QUESTIONS = (
+    ("RESEARCH ONLY", "Find all F1 experiment records and tell me which one has the lowest final_fitness."),
+    ("MATH ONLY", "Use the math add tool to calculate 12.5 + 7.25."),
+    (
+        "CROSS SERVER",
+        "Find the F1 experiment records. Then use the math percentage improvement tool, "
+        "not mental arithmetic, to calculate how much exp002 improves over the Baseline. "
+        "Lower final_fitness is better.",
+    ),
+)
 
 
 def print_message_flow(messages: Sequence[BaseMessage]) -> None:
-    first_tool_request: tuple[int, AIMessage] | None = None
+    tool_requests: list[tuple[int, AIMessage]] = []
     final_ai: tuple[int, AIMessage] | None = None
 
     print("\n=== MESSAGE FLOW ===")
@@ -26,8 +35,8 @@ def print_message_flow(messages: Sequence[BaseMessage]) -> None:
             print("content:", message.content)
         elif isinstance(message, AIMessage):
             final_ai = (index, message)
-            if message.tool_calls and first_tool_request is None:
-                first_tool_request = (index, message)
+            if message.tool_calls:
+                tool_requests.append((index, message))
             print("content:", message.content)
             print("tool_calls_count:", len(message.tool_calls))
             for call in message.tool_calls:
@@ -42,10 +51,9 @@ def print_message_flow(messages: Sequence[BaseMessage]) -> None:
             print("content:", message.content)
 
     print("\n=== TOOL CALL PAIRING ===")
-    if first_tool_request is None:
+    if not tool_requests:
         print("No tool calls.")
-    else:
-        request_index, request_message = first_tool_request
+    for request_index, request_message in tool_requests:
         responses_by_id = {
             getattr(message, "tool_call_id", None): message
             for message in messages[request_index + 1 :]
@@ -62,10 +70,10 @@ def print_message_flow(messages: Sequence[BaseMessage]) -> None:
                 print("response_tool:", response_name)
 
     print("\n=== AI MESSAGE ROLES IN LOOP ===")
-    if first_tool_request is None:
+    if not tool_requests:
         print("tool_request_ai_message_index:", None)
     else:
-        request_index, request_message = first_tool_request
+        request_index, request_message = tool_requests[0]
         print("tool_request_ai_message_index:", request_index)
         print("tool_calls_count:", len(request_message.tool_calls))
     if final_ai is not None:
@@ -76,11 +84,25 @@ def print_message_flow(messages: Sequence[BaseMessage]) -> None:
 
 
 async def main() -> None:
-    server_path = Path(__file__).resolve().parent / "server.py"
-    load_dotenv(server_path.with_name(".env"))
-    async with MCPAdapter(server_path) as adapter:
+    project_dir = Path(__file__).resolve().parent
+    load_dotenv(project_dir / ".env")
+    config = {
+        "mcpServers": {
+            "research": {
+                "command": sys.executable,
+                "args": [str(project_dir / "server.py")],
+                "transport": "stdio",
+            },
+            "math": {
+                "command": sys.executable,
+                "args": [str(project_dir / "math_server.py")],
+                "transport": "stdio",
+            },
+        }
+    }
+    async with MCPAdapter(config) as adapter:
         tools = await adapter.list_tools()
-        print("=== LANGCHAIN TOOLS FROM MCP ===")
+        print("=== MULTI-SERVER LANGCHAIN TOOLS ===")
         for tool in tools:
             print("tool_class:", type(tool).__name__)
             print("name:", tool.name)
@@ -88,8 +110,18 @@ async def main() -> None:
             print("args_schema:", tool.args_schema)
             print("metadata:", tool.metadata)
 
-        agent_tools = [tool for tool in tools if tool.name == "search_experiments"]
-        assert len(agent_tools) == 1, "Expected exactly one search_experiments tool."
+        print("\n=== TOOL SOURCES / TOOL ROUTING SUMMARY ===")
+        for tool in tools:
+            mcp_metadata = (tool.metadata or {}).get("mcp", {})
+            print("LangChain tool:", tool.name)
+            print("MCP server:", mcp_metadata.get("server", {}).get("name"))
+            print("Tool annotations:", mcp_metadata.get("tool", {}).get("annotations"))
+
+        allowed_tools = {"search_experiments", "add", "percentage_improvement"}
+        agent_tools = [
+            tool for tool in tools if tool.name.partition("_")[2] in allowed_tools
+        ]
+        assert len(agent_tools) == 3, "Expected three namespaced tools for the agent."
 
         required_settings = ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL")
         missing_settings = [name for name in required_settings if not os.environ.get(name)]
@@ -103,7 +135,8 @@ async def main() -> None:
         )
         agent = create_agent(model=model, tools=agent_tools)
 
-        for question in (QUESTION, CONTROL_QUESTION):
+        for label, question in QUESTIONS:
+            print(f"\n=== {label} ===")
             print("\n=== AGENT QUESTION ===")
             print(question, flush=True)
             result = await agent.ainvoke(
